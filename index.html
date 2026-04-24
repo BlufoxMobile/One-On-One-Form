@@ -2402,6 +2402,21 @@ dz.ondragleave=e=>{dz.style.borderColor='var(--accent)';dz.style.background='rgb
 dz.ondrop=e=>{e.preventDefault();e.stopPropagation();dz.style.borderColor='var(--accent)';dz.style.background='rgba(0,255,136,.04)';if(e.dataTransfer.files.length)processFile(e.dataTransfer.files[0])};
 fi2.onchange=e=>{if(e.target.files&&e.target.files.length)processFile(e.target.files[0])};
 
+// --- AUTO-LOAD from Daily-Sales-Report upload pipeline ---
+// If data/sales.xlsx exists in this repo, fetch and process it on page load.
+// Falls through to the manual drop-zone if the fetch fails.
+(function autoLoadSalesReport(){
+  const url = 'https://raw.githubusercontent.com/BlufoxMobile/One-On-One-Form/main/data/sales.xlsx?t=' + Date.now();
+  fetch(url)
+    .then(r => { if(!r.ok) throw new Error('not found'); return r.blob(); })
+    .then(blob => {
+      const file = new File([blob], 'sales.xlsx', { type: blob.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      if (typeof processFile === 'function') processFile(file);
+    })
+    .catch(err => console.warn('Auto-load sales report skipped:', err && err.message));
+})();
+
+
 function coerceRow(obj){
   const out={};
   for(const k in obj){
