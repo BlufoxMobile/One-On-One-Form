@@ -832,6 +832,8 @@ function selectStore(s){
   const tr=document.getElementById('targetRank');if(tr)tr.value='';
   renderList();renderOV(s);renderDay(s);renderRadar(s);renderBD(s);renderReps(s);
   genRx();
+  // Auto-fill T-Chart MTD from T-Sheet-Submissions (editable; managers can override)
+  try{autoPopulateTChartFromSheet();}catch(e){console.warn('T-Sheet auto-fill skipped:',e);}
 }
 
 // === OVERVIEW CARDS ===
@@ -1670,8 +1672,8 @@ function genRepScreenRx(skipHeader=false){
           <div id="repTChartStats2" style="margin-top:8px"></div>
         </div>
         <div class="gp-ctrl-box target">
-          <div style="font-size:.78em;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:8px">🎯 Target Override</div>
-          <label style="font-size:.72em;color:var(--muted);font-weight:600">Override Target Company Rank</label>
+          <div style="font-size:.78em;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:8px">🎯 Month-End Goal</div>
+          <label style="font-size:.72em;color:var(--muted);font-weight:600">How would you like to rank by the end of the month?</label>
           <input type="number" id="repTargetRank2" placeholder="e.g. 10" min="1" value="${prevTargetVal}" oninput="genRepScreenRx(true)" onclick="this.focus()" style="width:100%;box-sizing:border-box;background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.3);color:var(--text);padding:8px 10px;border-radius:8px;font-size:.82em;margin-top:4px;cursor:text;pointer-events:auto;font-family:inherit" onfocus="this.style.borderColor='var(--accent)';this.style.background='rgba(0,255,136,.15)'" onblur="this.style.borderColor='rgba(0,255,136,.3)';this.style.background='rgba(0,255,136,.08)'">
           <div id="repRxInfo2" style="font-size:.72em;margin-top:6px"></div>
         </div>
@@ -1912,6 +1914,59 @@ function genRepScreenRx(skipHeader=false){
 }
 
 // === STORE SMART PRESCRIPTION ===
+// === T-Sheet Auto-Population (pulls from blufoxmobile.github.io/T-Sheet-Submissions) ===
+const TSHEET_ENDPOINT='https://script.google.com/macros/s/AKfycbxEehuxYvy1HD6NeSf-phnZKUitvWveqB_ncKu9lEDl-KNPVxhQCbRyi0A1fzgmva6w/exec';
+window._tSheetCache=null;
+window._tSheetCacheAt=0;
+
+function normalizeStoreName(s){
+  return (s||'').toString().toLowerCase()
+    .replace(/xfinity\s*store/gi,'')
+    .replace(/[^a-z0-9]+/gi,'')
+    .trim();
+}
+
+function isThisCalendarMonth(d){
+  if(!d)return false;
+  const dt=new Date(d);
+  if(isNaN(dt.getTime()))return false;
+  const now=new Date();
+  return dt.getFullYear()===now.getFullYear()&&dt.getMonth()===now.getMonth();
+}
+
+async function fetchTSheetSubmissions(){
+  if(window._tSheetCache&&(Date.now()-window._tSheetCacheAt)<60000){
+    return window._tSheetCache;
+  }
+  try{
+    const resp=await fetch(TSHEET_ENDPOINT+'?t='+Date.now(),{cache:'no-store'});
+    const data=await resp.json();
+    if(data&&data.success&&Array.isArray(data.submissions)){
+      window._tSheetCache=data.submissions;
+      window._tSheetCacheAt=Date.now();
+      return data.submissions;
+    }
+  }catch(e){
+    console.warn('T-Sheet fetch failed:',e);
+  }
+  return [];
+}
+
+async function autoPopulateTChartFromSheet(){
+  if(!selStore)return;
+  const subs=await fetchTSheetSubmissions();
+  if(!subs.length)return;
+  const target=normalizeStoreName(selStore.store);
+  const mtdCount=subs.filter(s=>{
+    return isThisCalendarMonth(s.date)&&normalizeStoreName(s.store)===target;
+  }).length;
+  if(mtdCount<=0)return;
+  window._storeTCharts[selStore.store]=mtdCount;
+  const el=document.getElementById('tChartInput');
+  if(el){el.value=mtdCount;}
+  refreshTChartStats();
+}
+
 // Global T-Chart storage (persists across renders)
 if(!window._storeTCharts)window._storeTCharts={};
 if(!window._repTCharts)window._repTCharts={};
@@ -2047,8 +2102,8 @@ function genRx(skipHeader=false){
           <div id="tChartStats" style="margin-top:8px"></div>
         </div>
         <div class="gp-ctrl-box target">
-          <div style="font-size:.78em;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:8px">🎯 Target Override</div>
-          <label style="font-size:.72em;color:var(--muted);font-weight:600">Override Target Rank</label>
+          <div style="font-size:.78em;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:8px">🎯 Month-End Goal</div>
+          <label style="font-size:.72em;color:var(--muted);font-weight:600">How would you like to rank by the end of the month?</label>
           <input type="number" id="targetRank" placeholder="e.g. 25" min="1" value="${prevTargetVal}" oninput="genRx(true)" onclick="this.focus()" style="width:100%;box-sizing:border-box;background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.3);color:var(--text);padding:8px 10px;border-radius:8px;font-size:.82em;margin-top:4px;cursor:text;pointer-events:auto;font-family:inherit" onfocus="this.style.borderColor='var(--accent)';this.style.background='rgba(0,255,136,.15)'" onblur="this.style.borderColor='rgba(0,255,136,.3)';this.style.background='rgba(0,255,136,.08)'">
           <div id="rxInfo" style="font-size:.72em;margin-top:6px"></div>
         </div>
