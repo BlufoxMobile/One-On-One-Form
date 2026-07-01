@@ -162,6 +162,25 @@ main{max-width:1080px;margin:0 auto;padding:max(22px,3vw) max(18px,4vw) 80px}
   font-size:.88rem;color:#176349;line-height:1.5}
 .keepup b{font-weight:800}
 
+/* intro + daily goals + achievability + goal stack */
+.moves-intro{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:13px 16px;margin-bottom:16px;
+  font-size:.9rem;color:var(--ink2);line-height:1.5}
+.moves-intro b{color:var(--ink);font-weight:800}
+.dgrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2)}
+.dg-lab{font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.dg-chip{font-size:.8rem;font-weight:700;color:var(--ink2);background:var(--paper2);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+.dg-note{font-size:.68rem;color:var(--faint);font-style:italic}
+.ft.dotable{flex:0 0 auto;min-width:0;background:none;border:none;padding:0;display:grid;place-items:center}
+.doable-chip{color:#fff;font-size:.72rem;font-weight:800;border-radius:999px;padding:5px 12px;white-space:nowrap;text-transform:uppercase;letter-spacing:.03em}
+.goalstack{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--brand-soft);border:1px solid #d4e2fa;border-radius:12px;
+  padding:8px 13px;margin-bottom:12px}
+.gs-item{display:flex;flex-direction:column;line-height:1.05}
+.gs-l{font-size:.6rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)}
+.gs-v{font-family:'Fraunces',serif;font-weight:800;font-size:1.15rem;color:var(--ink2)}
+.gs-op{font-weight:800;color:var(--faint);font-size:1rem}
+.gs-total .gs-v{color:var(--brand-d)}
+.gs-unit{margin-left:auto;font-size:.74rem;font-weight:700;color:var(--brand-d);text-transform:capitalize}
+
 footer{max-width:1080px;margin:0 auto;padding:0 max(18px,4vw) 50px;color:var(--faint);font-size:.78rem;text-align:center;line-height:1.7}
 footer .row{padding-top:22px;border-top:1px solid var(--line)}
 footer b{color:var(--soft)}
@@ -243,22 +262,23 @@ var BUILTIN_DATE = "May 31, 2026";
 
 /* ============ KPI CONFIG ============ */
 // type: pct (0..1 shown as %), usd ($ whole), usd2 ($ 2-dp per device)
+// kind drives the pace-aware unit math: rate=per-walk-in, mix=share of sales, acc=$/device, gp=profit, nps=lagged
 var KPIS = [
-  {k:'mcr', w:25, name:'Mobile Close Rate', type:'pct',
+  {k:'mcr', w:25, name:'Mobile Close Rate', type:'pct', kind:'rate', unit:'mobile sale', base:'walk-ins',
    eli5:"Of everyone who walks in, how many leave with a new phone line. This is the single biggest score on the board."},
-  {k:'gp',  w:20, name:'Profit (GP $ Trend)', type:'usd',
+  {k:'gp',  w:20, name:'Profit (GP $ Trend)', type:'usd', kind:'gp',
    eli5:"How much money your store is on pace to make this month after costs."},
-  {k:'nps', w:15, name:'Customer Happiness (NPS)', type:'pct',
+  {k:'nps', w:15, name:'Customer Happiness (NPS)', type:'pct', kind:'nps',
    eli5:"How much customers love the visit. Happy customers come back and bring friends."},
-  {k:'ntcr',w:10, name:'Non-Traditional Close Rate', type:'pct',
+  {k:'ntcr',w:10, name:'Non-Traditional Close Rate', type:'pct', kind:'rate', unit:'non-traditional sale', base:'walk-ins',
    eli5:"How often you sell the extra stuff — internet, tablets, watches — not just phones."},
-  {k:'acc', w:10, name:'Accessory $ per Device', type:'usd2',
+  {k:'acc', w:10, name:'Accessory $ per Device', type:'usd2', kind:'acc',
    eli5:"How much in cases, chargers and protection you add to each device you sell."},
-  {k:'gig', w:10, name:'GIG Internet %', type:'pct',
+  {k:'gig', w:10, name:'GIG Internet %', type:'pct', kind:'mix', unit:'GIG plan', base:'internet sales',
    eli5:"How many internet deals are the big 1-Gig+ plans — the ones that pay the most."},
-  {k:'upg', w:5,  name:'Mobile Upgrades %', type:'pct',
+  {k:'upg', w:5,  name:'Mobile Upgrades %', type:'pct', kind:'mix', unit:'upgrade', base:'mobile sales',
    eli5:"How many of your mobile sales are existing customers upgrading their line."},
-  {k:'mp',  w:5,  name:'Premium Plan Mix', type:'pct',
+  {k:'mp',  w:5,  name:'Premium Plan Mix', type:'pct', kind:'mix', unit:'Mobile Plus line', base:'mobile lines',
    eli5:"How many mobile lines land on the premium Mobile Plus plan."},
 ];
 var KMAP={}; KPIS.forEach(function(x){KMAP[x.k]=x;});
@@ -320,57 +340,122 @@ function rankAtValue(k,val){
   for(var i=0;i<arr.length;i++){ if(arr[i].v<=val+1e-9) r=Math.max(r,arr[i].r); }
   return r||1;
 }
-// biggest believable one-month improvement, by metric type
-function realismCap(type,cur){
-  if(type==='pct')  return Math.min(0.06, Math.max(0.015, 0.5*cur));   // up to ~+6 points, never silly
-  if(type==='usd')  return Math.min(25000, Math.max(2000, 0.30*cur));  // GP trend: ~+30%
-  if(type==='usd2') return Math.min(12, Math.max(3, 0.40*cur));        // accessory $/device
-  return 0.5*cur;
-}
-
-/* ============ TARGET RANK (realistic next step) ============ */
-function targetRank(R){
-  var tr, b=band(R);
-  if(b==='red')   tr=Math.min(R+45, 80);
-  else if(b==='amber') tr=Math.min(R+35, 115);
-  else tr=Math.min(R+15, N);
-  tr=Math.max(tr, R+6);          // always a meaningful climb
-  tr=Math.min(tr, N);
-  return tr;
-}
-
-/* ============ THE PLAY (fiscal-aware coaching) ============ */
-function makePlay(k,s,cur,goal,fi){
-  var dleft=Math.max(1,fi.left);
-  var projTraffic = (s.trfday||0)*fi.total;       // projected full-month traffic
-  var d, extra, perDay;
-  switch(k){
-    case 'mcr':
-      d=goal-cur; extra=Math.max(0, d*projTraffic); perDay=extra/dleft;
-      return "Lift your close rate by <b>"+(d*100).toFixed(1)+" points</b>. With your traffic that's about <b>"+plural(extra,'more mobile sale')+"</b> the rest of the month — roughly <b>"+perDay.toFixed(1)+" a day</b>. Greet fast, qualify every guest, and don't let a 'just looking' walk out without a quote.";
-    case 'ntcr':
-      d=goal-cur; extra=Math.max(0, d*projTraffic); perDay=extra/dleft;
-      return "Add about <b>"+plural(extra,'more non-traditional sale')+"</b> (internet, tablet, watch) this month — around <b>"+perDay.toFixed(1)+" a day</b>. Pitch home internet on every mobile deal and bundle a watch or tablet with new lines.";
-    case 'gp':
-      d=Math.max(0,goal-cur); perDay=d/dleft;
-      return "You're tracking to <b>$"+commas(cur)+"</b> in profit. Closing the gap is about <b>$"+commas(d)+" more</b> by the 21st — roughly <b>$"+commas(perDay)+" a day</b>. Protect margin: full-price accessories, premium plans, and trim falloff by confirming every activation sticks.";
-    case 'acc':
-      d=Math.max(0,goal-cur); var devMonth=(s.dev||0); var addRev=d*devMonth;
-      return "Add about <b>$"+d.toFixed(2)+" of accessories to every device</b> you sell — one case + screen protector usually does it. Across your devices that's roughly <b>$"+commas(addRev)+" more</b> accessory revenue this month.";
-    case 'gig':
-      d=Math.max(0,goal-cur); var hsiBase=(s.gigv>0)? (s.gigc/s.gigv) : (s.gigc||0); var more=d*hsiBase;
-      return "Move your GIG mix up <b>"+(d*100).toFixed(1)+" points</b> — about <b>"+plural(more,'more customer')+"</b> on a 1-Gig+ plan. Lead with the fastest plan first; make Gig the default, not the upsell.";
-    case 'upg':
-      d=Math.max(0,goal-cur); var base=(s.mob||0)+(s.upgmtd||0); var moreU=d*base;
-      return "Raise your upgrade mix <b>"+(d*100).toFixed(1)+" points</b> — roughly <b>"+plural(moreU,'more upgrade')+"</b>. Run a 'who's due' list and call existing customers before they shop elsewhere.";
-    case 'mp':
-      d=Math.max(0,goal-cur); var mb=(s.mob||0); var moreP=d*mb;
-      return "Put <b>"+(d*100).toFixed(1)+" points more</b> of your lines on Mobile Plus — about <b>"+plural(moreP,'more premium line')+"</b>. Present premium first and tie it to the perks customers actually use.";
-    case 'nps':
-      d=Math.max(0,goal-cur);
-      return "Lift NPS by <b>"+(d*100).toFixed(1)+" points</b>. Ask <b>every</b> happy customer to do the survey before they leave, fix one friction point (wait time, follow-up text), and personally save any unhappy guest on the spot.";
+/* ============ PACE-AWARE COACHING ENGINE ============ */
+// Real, explainable numerator/base for each metric (so units track what the manager sees).
+function realModel(kp,s){
+  switch(kp.kind){
+    case 'rate':
+      if(kp.k==='mcr')  return {num:s.minst, base:s.trf, grow:'traffic'};
+      return {num:Math.max(0,(s.inst||0)-(s.minst||0)), base:s.trf, grow:'traffic'}; // non-traditional
+    case 'mix':
+      if(kp.k==='mp')  return {num:s.mpc, base:s.mob, grow:'mtd'};
+      if(kp.k==='upg') return {num:s.upgmtd, base:s.newmob, grow:'mtd'};
+      if(kp.k==='gig'){var hsi=(s.gigv>0)? s.gigc/s.gigv : s.gigc; return {num:s.gigc, base:hsi, grow:'mtd'};}
   }
-  return "";
+  return null;
+}
+// How ambitious a rank climb to aim for, dialed down as the fiscal month runs out.
+function targetRank(R,fi){
+  var room=N-R, pace=Math.max(0.15,(fi.left||0)/(fi.total||1)), p=R/N;
+  var reach = p>0.75?0.12 : p>0.50?0.28 : 0.42;
+  var tr=R+Math.round(room*reach*pace);
+  tr=Math.max(tr, Math.min(N, R+((fi.left||0)>=3?2:1)));
+  return Math.min(tr,N);
+}
+// Achievability from required daily lift vs current daily pace.
+function grade(extra,perDayNeeded,curPace){
+  if(extra<=0) return {g:'easy',label:'already on track'};
+  var lift=curPace>0?perDayNeeded/curPace:(perDayNeeded>0?99:0);
+  if(perDayNeeded<=Math.max(1,curPace*0.5)||lift<=1.4) return {g:'easy',label:'very doable'};
+  if(lift<=2.2) return {g:'push',label:'a real push'};
+  return {g:'stretch',label:'a big stretch'};
+}
+function gradeColor(g){return g==='easy'?'#1a7f4b':g==='push'?'#b7791f':'#c0492b';}
+// How many stores overall you'd overtake by adding `pts` to your score.
+function overtakeCount(s,pts){var c=0;for(var i=0;i<STORES.length;i++){var x=STORES[i];if(x.score>s.score&&x.score<=s.score+pts)c++;}return c;}
+
+/* ===== Store's OWN daily goals — mirrors the Daily-Goals-Sheet math (fiscal basis) ===== */
+var TH={mcr:7, fcr:10, acc:30, gpFloor:40000, gpBoost:10000};
+function dailyGoals(s,fi){
+  var ftot=fi.total||1, frem=Math.max(1,fi.left||0);
+  var projF=Math.ceil((s.trfday||1)*ftot);
+  var mobTgt=Math.floor((TH.mcr/100)*projF);
+  var mobNeed=Math.max(0,mobTgt-(s.minst||0));
+  var mobD=mobNeed===0?Math.max(1,Math.ceil(mobTgt/ftot)):Math.ceil(mobNeed/frem);
+  var rguTgt=Math.ceil((TH.fcr/100)*projF);
+  var rguNeed=Math.max(0,rguTgt-(s.inst||0));
+  var rguD=rguNeed===0?Math.max(1,Math.ceil(rguTgt/ftot)):Math.ceil(rguNeed/frem);
+  var accTgt=Math.round(TH.acc*mobTgt);
+  var accNeed=Math.max(0,accTgt-Math.round(s.accnet||0));
+  var accD=accNeed===0?Math.max(1,Math.ceil(accTgt/ftot)):Math.ceil(accNeed/frem);
+  var gpBase=(s.ntgp||0)<TH.gpFloor?(s.ntgp||0)+TH.gpBoost:(s.ntgp||0);
+  var gpGoal=Math.max(gpBase,s.gptrend||0);
+  var gpD=Math.max(1,Math.ceil(gpGoal/ftot));
+  return {mob:mobD, rgu:rguD, nonTrad:Math.max(0,rguD-mobD), acc:accD, gp:gpD};
+}
+
+// Build one pace-aware move. Returns null if there's no honest room.
+function buildMove(kp,s,fi){
+  var R=s[kp.k+'r'], cur=s[kp.k+'v'];
+  var tr=targetRank(R,fi);
+  var goalScored=valueAtRank(kp.k,tr);
+  if(goalScored==null||!(goalScored>cur)) return null;
+  var realRank=Math.min(rankAtValue(kp.k,goalScored),N);
+  if(realRank<=R) return null;
+  var pts=(realRank-R)*kp.w;
+  var overall=overtakeCount(s,pts);
+  var dleft=Math.max(0,fi.left||0), dEl=Math.max(1,fi.dayN||1);
+  var det={},gd,play;
+
+  var rm=realModel(kp,s);
+  if(rm && rm.base>0){
+    var curReal=rm.num/rm.base;
+    var bridge=cur>0?curReal/cur:1;          // scored->real so units match the manager's own report
+    var goalReal=goalScored*bridge;
+    var futureBase = rm.grow==='traffic' ? (s.trfday||rm.base/dEl)*dleft : (rm.base/dEl)*dleft;
+    var baseEnd=rm.base+futureBase;
+    var extra=Math.max(0, goalReal*baseEnd - rm.num);
+    var perDayNeeded=dleft>0?extra/dleft:extra, curPace=rm.num/dEl;
+    gd=grade(extra,perDayNeeded,curPace);
+    det={curReal:curReal,goalReal:goalReal,extra:extra,perDayNeeded:perDayNeeded,curPace:curPace,futureBase:futureBase};
+    var eu=Math.round(extra), unit=kp.unit;
+    if(kp.kind==='rate'){
+      // Stack the store's OWN daily goal (from the Daily-Goals-Sheet) with the extra needed to climb.
+      var dg=dailyGoals(s,fi);
+      var baseG=(kp.k==='mcr')?dg.mob:dg.nonTrad;
+      var rankDaily=Math.max(0,Math.ceil(perDayNeeded));
+      var combined=Math.max(baseG,rankDaily);
+      var extraG=combined-baseG;
+      det.stack={base:baseG,extra:extraG,combined:combined,unit:(kp.k==='mcr'?'mobile':'non-traditional')};
+      play="Your standing daily goal is <b>"+baseG+" "+(kp.k==='mcr'?'mobile':'non-traditional')+(baseG===1?'':'s')+"/day</b>. "+
+        (extraG>0
+          ? "To also climb the ranker, add <b>+"+extraG+"/day</b> on top — aim for <b>"+combined+"/day</b> to reach <b>"+fmt('pct',goalReal)+"</b> by the 21st. "
+          : "Hit that and you climb — you’re already pacing enough to reach <b>"+fmt('pct',goalReal)+"</b>. ")+
+        (kp.k==='mcr'?"Greet fast, put a number in front of every ‘just looking’, and don’t let a guest leave without a quote."
+                     :"Attach home internet, a watch or a tablet to every phone deal.");
+    } else {
+      var share=futureBase>0?Math.min(1,extra/futureBase):0;
+      play="You’ve got about <b>"+Math.round(futureBase)+" more "+kp.base+"</b> coming this month. Make <b>~"+eu+" of them "+unit+"s</b> ("+Math.round(share*100)+"% of them) to lift your mix from <b>"+fmt('pct',curReal)+"</b> to <b>"+fmt('pct',goalReal)+"</b>. "+
+        (kp.k==='mp'?"Lead with Mobile Plus — present premium first and tie it to perks they’ll actually use."
+        :kp.k==='upg'?"Work a ‘who’s due’ list and call upgrade-eligible customers before they shop around."
+        :"Make the 1-Gig plan your default pitch, not the upsell.");
+    }
+  } else if(kp.kind==='acc'){
+    var perDev=Math.max(0,goalScored-cur), devLeft=(s.dev||0)/dEl*dleft, addRev=perDev*((s.dev||0)+devLeft);
+    gd=grade(perDev>0?1:0, perDev, Math.max(1,cur*0.15));
+    det={perDev:perDev};
+    play="Add about <b>$"+perDev.toFixed(2)+" more per device</b> — usually one case plus a screen protector. Over the roughly <b>"+Math.round(devLeft)+" devices</b> left this month that’s about <b>$"+commas(addRev)+" more</b>, and it lifts you from <b>$"+cur.toFixed(2)+"</b> to <b>$"+goalScored.toFixed(2)+"</b> per device.";
+  } else if(kp.kind==='gp'){
+    var extraMonthly=Math.max(0,goalScored-cur), perDay=dleft>0?extraMonthly/dleft:extraMonthly, gpPace=s.gpday||0;
+    gd=grade(extraMonthly>0?1:0, perDay, Math.max(1,gpPace));
+    det={perDay:perDay,gpPace:gpPace};
+    play="You’re pacing <b>$"+commas(gpPace)+"/day</b> in profit. Add about <b>$"+commas(perDay)+"/day</b> more — full-price accessories, premium plans, protect margin and kill fallout — to reach <b>$"+commas(goalScored)+"</b> and climb the profit board.";
+  } else { // nps — lagged / smoothed, coach honestly
+    gd={g:'push',label:'slowest lever'};
+    det={};
+    play="You’re at <b>"+fmt('pct',cur)+"</b>. NPS moves slowly and is smoothed over recent weeks, so start today: ask <b>every</b> happy customer to finish the survey before they leave, and fix one friction point (wait time, a follow-up text). A few more promoters nudges you up the board.";
+  }
+  return {kp:kp,R:R,realRank:realRank,cur:cur,goal:goalScored,pts:pts,overall:overall,det:det,grade:gd,play:play,b:band(R)};
 }
 
 /* ============ RENDER HERO ============ */
@@ -415,48 +500,73 @@ function renderGrid(s){
   },120);});
 }
 
+/* intro above the 3 moves: the store directly above you + your standing daily goals */
+function renderMovesIntro(box,s,top,fi){
+  var above=STORES.filter(function(x){return x.rk===s.rk-1;})[0];
+  var sumPts=top.reduce(function(a,o){return a+o.pts;},0);
+  var intro=document.createElement('div'); intro.className='moves-intro';
+  var html;
+  if(above){
+    var gap=Math.max(0, above.score-s.score);
+    html='Next store to pass: <b>#'+above.rk+' '+esc(above.st)+'</b> — you’re <b>'+commas(gap)+' points</b> behind. '+
+      'These three moves are worth up to <b>+'+commas(sumPts)+' points</b> with <b>'+fi.left+' day'+(fi.left===1?'':'s')+'</b> left in the fiscal month'+((gap>0&&sumPts>=gap)?' — enough to move past them':'')+'. Each move is graded by how doable it is in the time you have.';
+  } else {
+    html='You’re <b>#1</b> — this is about defending the top. These moves are worth up to <b>+'+commas(sumPts)+' points</b> with <b>'+fi.left+' day'+(fi.left===1?'':'s')+'</b> left.';
+  }
+  var g=dailyGoals(s,fi);
+  html+='<div class="dgrow"><span class="dg-lab">Your daily goals</span>'+
+    '<span class="dg-chip">📱 '+g.mob+' mobile</span>'+
+    '<span class="dg-chip">➕ '+g.nonTrad+' non-trad</span>'+
+    '<span class="dg-chip">🎁 $'+commas(g.acc)+' acc</span>'+
+    '<span class="dg-chip">💰 $'+commas(g.gp)+' GP</span>'+
+    '<span class="dg-note">per day · matches your Daily-Goals sheet</span></div>';
+  intro.innerHTML=html;
+  box.appendChild(intro);
+  if(!top.length){
+    var none=document.createElement('div'); none.className='moves-intro';
+    none.innerHTML='No high-value moves left with this little time in the month — protect your strengths and reset on the 22nd.';
+    box.appendChild(none);
+  }
+}
+
 /* ============ RENDER TOP 3 ============ */
 function renderMoves(s){
   var fi=fiscal();
-  var opps=KPIS.map(function(kp){
-    var R=s[kp.k+'r'];
-    var cur=s[kp.k+'v'];
-    // 1) where peers a realistic rank-climb above us actually sit
-    var tr=targetRank(R);
-    var peerVal=valueAtRank(kp.k,tr);
-    if(peerVal==null) return null;
-    // 2) the believable one-month ceiling for THIS metric/value
-    var cap=cur + realismCap(kp.type,cur);
-    // 3) goal = whichever is more conservative -> always a real, reachable number
-    var goal=Math.min(peerVal, cap);
-    if(!(goal>cur)) return null;           // no honest room to improve
-    // 4) derive the rank that goal actually earns (don't overpromise points)
-    var realRank=Math.min(rankAtValue(kp.k,goal), N);
-    if(realRank<=R) return null;
-    var spots=pos(R)-pos(realRank);        // positions gained (positive)
-    var pts=(realRank-R)*kp.w;             // exact total-score points gained
-    return {kp:kp,R:R,tr:realRank,cur:cur,goal:goal,spots:spots,pts:pts,b:band(R)};
-  }).filter(function(o){return o!=null;})
-    .sort(function(a,b){return b.pts-a.pts;});
+  var opps=KPIS.map(function(kp){return buildMove(kp,s,fi);}).filter(function(o){return o!=null;});
+  // rank by rank-spot movement (pts) weighted by achievability, nudged toward product-mix, lagged-metric penalty
+  var aw={easy:1.0,push:0.65,stretch:0.32};
+  opps.forEach(function(o){
+    var a=aw[o.grade.g]!=null?aw[o.grade.g]:0.5;
+    var mix=(o.kp.kind==='mix')?1.15:1.0;
+    var lag=(o.kp.kind==='nps')?0.45:1.0;
+    o.rankScore=o.pts*a*mix*lag;
+  });
+  opps.sort(function(a,b){return b.rankScore-a.rankScore;});
 
   var top=opps.slice(0,3);
   var box=document.getElementById('moves'); box.innerHTML='';
+  renderMovesIntro(box,s,top,fi);
   top.forEach(function(o,i){
-    var kp=o.kp;
+    var kp=o.kp, gc=gradeColor(o.grade.g);
     var el=document.createElement('div');
     el.className='move '+o.b; el.style.animationDelay=(i*0.08)+'s';
     el.innerHTML=
       '<div class="num">'+(i+1)+'</div>'+
       '<div class="move-body">'+
         '<div class="move-h"><span class="ttl">'+kp.name+'</span>'+
-          '<span class="impact">▲ up to '+o.spots+' spots · +'+commas(o.pts)+' pts</span></div>'+
+          '<span class="impact">+'+commas(o.pts)+' pts'+(o.overall>0?' · pass ~'+o.overall+' store'+(o.overall===1?'':'s'):'')+'</span></div>'+
         '<div class="why">'+kp.eli5+'</div>'+
         '<div class="fromto">'+
           '<div class="ft now"><div class="l">Right now</div><div class="v tnum">'+fmt(kp.type,o.cur)+'</div></div>'+
           '<div class="ftarrow">→</div>'+
-          '<div class="ft goal"><div class="l">This month\u2019s goal</div><div class="v tnum">'+fmt(kp.type,o.goal)+'</div></div>'+
+          '<div class="ft goal"><div class="l">Month-end goal</div><div class="v tnum">'+fmt(kp.type,o.goal)+'</div></div>'+
+          '<div class="ft dotable"><span class="doable-chip" style="background:'+gc+'">'+o.grade.label+'</span></div>'+
         '</div>'+
-        '<div class="play"><div class="pl">▸ The Play</div><div class="pt">'+makePlay(kp.k,s,o.cur,o.goal,fi)+'</div></div>'+
+        (o.det.stack?('<div class="goalstack"><span class="gs-item"><span class="gs-l">Daily goal</span><span class="gs-v tnum">'+o.det.stack.base+'</span></span>'+
+          '<span class="gs-op">+</span><span class="gs-item"><span class="gs-l">to climb</span><span class="gs-v tnum">'+o.det.stack.extra+'</span></span>'+
+          '<span class="gs-op">=</span><span class="gs-item gs-total"><span class="gs-l">aim for</span><span class="gs-v tnum">'+o.det.stack.combined+'/day</span></span>'+
+          '<span class="gs-unit">'+o.det.stack.unit+'</span></div>'):'')+
+        '<div class="play"><div class="pl">▸ The Play</div><div class="pt">'+o.play+'</div></div>'+
       '</div>';
     box.appendChild(el);
   });
@@ -535,8 +645,8 @@ function setData(stores,dateLabel,sourceNote,statusClass){
 }
 
 /* parse an uploaded/fetched workbook into the store structure */
-var IDX={rk:0,rg:1,st:2,rsd:4,dm:5,sm:6,'gp$':7,ntgp:15,vargp:16,gpday:18,gpbal:19,
-  trf:37,trfday:30,inst:38,minst:39,mob:63,upgmtd:75,'acc$':84,accdev:86,
+var IDX={rk:0,rg:1,st:2,rsd:4,dm:5,sm:6,'gp$':7,gptrend:11,ntgp:15,vargp:16,gpday:18,gpbal:19,
+  trf:37,trfday:30,inst:38,minst:39,mob:63,upgmtd:75,accnet:81,'acc$':84,accdev:86,
   gigc:60,mpc:70,newmob:72,dev:78,crdisp:21,npsdisp:90};
 var KCOL={mcr:[96,97,98],gp:[93,94,95],nps:[108,109,110],ntcr:[99,100,101],
   acc:[105,106,107],gig:[111,112,113],upg:[102,103,104],mp:[114,115,116]};
@@ -558,10 +668,10 @@ function parseWorkbook(buf){
     var rk=r[IDX.rk], stn=r[IDX.st];
     if(typeof rk!=='number' || !stn) continue;
     var o={rk:Math.round(rk),rg:r[IDX.rg]||'',st:stn,rsd:r[IDX.rsd]||'',dm:r[IDX.dm]||'',sm:r[IDX.sm]||'',
-      score:num(r[117]),'gp$':num(r[IDX['gp$']]),ntgp:num(r[IDX.ntgp]),vargp:num(r[IDX.vargp]),
+      score:num(r[117]),'gp$':num(r[IDX['gp$']]),gptrend:num(r[IDX.gptrend]),ntgp:num(r[IDX.ntgp]),vargp:num(r[IDX.vargp]),
       gpday:num(r[IDX.gpday]),gpbal:num(r[IDX.gpbal]),trf:num(r[IDX.trf]),trfday:num(r[IDX.trfday]),
       inst:num(r[IDX.inst]),minst:num(r[IDX.minst]),mob:num(r[IDX.mob]),upgmtd:num(r[IDX.upgmtd]),
-      'acc$':num(r[IDX['acc$']]),accdev:num(r[IDX.accdev]),gigc:num(r[IDX.gigc]),mpc:num(r[IDX.mpc]),
+      accnet:num(r[IDX.accnet]),'acc$':num(r[IDX['acc$']]),accdev:num(r[IDX.accdev]),gigc:num(r[IDX.gigc]),mpc:num(r[IDX.mpc]),
       newmob:num(r[IDX.newmob]),dev:num(r[IDX.dev]),crdisp:num(r[IDX.crdisp]),npsdisp:num(r[IDX.npsdisp])};
     for(var k in KCOL){var c=KCOL[k]; o[k+'v']=num(r[c[0]]); o[k+'r']=Math.round(num(r[c[1]])); o[k+'p']=num(r[c[2]]);}
     out.push(o);
