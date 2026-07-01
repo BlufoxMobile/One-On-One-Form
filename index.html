@@ -692,37 +692,39 @@ function handleBuffer(buf,label,note){
   }
 }
 
-/* ============ AUTO-PULL from Daily-Sales-Report repo ============ */
-var REPO='BlufoxMobile/Daily-Sales-Report';
-function candidateUrls(){
+/* ============ AUTO-PULL live data ============
+   The Daily-Sales-Report upload page commits the same workbook to this repo's
+   data/sales.xlsx on every upload, so we load that first (same-origin, always
+   the latest). Falls back to raw GitHub copies, then the built-in snapshot. */
+var SOURCES=[
+  'data/sales.xlsx',
+  'https://raw.githubusercontent.com/blufoxmobile/One-On-One-Form/main/data/sales.xlsx',
+  'https://raw.githubusercontent.com/blufoxmobile/Daily-Sales-Report/main/data/Sales%20Report.xlsx'
+];
+function fmtDate(d){
   var MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  var urls=[]; var today=new Date();
-  for(var i=0;i<7;i++){
-    var d=new Date(today.getFullYear(),today.getMonth(),today.getDate()-i);
-    var name='Blufox_-_Sales_Report_'+MN[d.getMonth()]+'_'+d.getDate()+'_'+d.getFullYear()+'.xlsx';
-    var label=MN[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear();
-    ['main','master'].forEach(function(br){
-      urls.push({url:'https://raw.githubusercontent.com/'+REPO+'/'+br+'/'+encodeURIComponent(name),label:label});
-    });
-  }
-  return urls;
+  return isNaN(d)?'latest':MN[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear();
 }
 function tryAutoPull(){
-  var cands=candidateUrls(), idx=0;
+  var idx=0;
   function next(){
-    if(idx>=cands.length){
+    if(idx>=SOURCES.length){
       setData(BUILTIN,BUILTIN_DATE,
         'Showing built-in <b>'+BUILTIN_DATE+'</b> data. Upload today\u2019s report for live numbers.','warn');
       return;
     }
-    var c=cands[idx++];
-    var ctl=new AbortController(); var to=setTimeout(function(){ctl.abort();},4500);
-    fetch(c.url,{signal:ctl.signal,cache:'no-store'}).then(function(res){
+    var url=SOURCES[idx++];
+    var bust=(url.indexOf('?')<0?'?':'&')+'t='+Date.now();
+    var ctl=new AbortController(); var to=setTimeout(function(){ctl.abort();},6000);
+    var lm=null;
+    fetch(url+bust,{signal:ctl.signal,cache:'no-store'}).then(function(res){
       clearTimeout(to);
       if(!res.ok) throw 0;
+      lm=res.headers.get('last-modified');
       return res.arrayBuffer();
     }).then(function(buf){
-      handleBuffer(buf,c.label,'✓ Auto-loaded today\u2019s report (<b>'+c.label+'</b>).');
+      var label=fmtDate(lm?new Date(lm):new Date());
+      handleBuffer(buf,label,'✓ Live data loaded — latest upload (<b>'+label+'</b>).');
     }).catch(function(){ next(); });
   }
   next();
