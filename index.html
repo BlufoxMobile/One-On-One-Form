@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Blufox One-on-One · Store Coaching</title>
+<title>Blufox One-on-One · Store · District · Region Coaching</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -181,6 +181,16 @@ main{max-width:1080px;margin:0 auto;padding:max(22px,3vw) max(18px,4vw) 80px}
 .gs-total .gs-v{color:var(--brand-d)}
 .gs-unit{margin-left:auto;font-size:.74rem;font-weight:700;color:var(--brand-d);text-transform:capitalize}
 
+/* tabs + level pickers + focus row */
+.tabbar{display:flex;gap:6px;margin:0 auto 10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:var(--shadow);width:max-content;max-width:100%}
+.tab{font-family:inherit;font-weight:800;font-size:.9rem;border:none;background:none;color:var(--soft);padding:9px 24px;border-radius:10px;cursor:pointer;transition:.15s;white-space:nowrap}
+.tab:hover{color:var(--brand)}
+.tab.active{background:var(--brand);color:#fff;box-shadow:0 3px 10px -3px rgba(31,95,208,.55)}
+.results.show-all{max-height:560px}
+.focusrow{margin-top:10px;background:var(--amber-bg);border:1px solid var(--amber-line);border-radius:12px;padding:10px 13px;font-size:.87rem;color:var(--ink2);line-height:1.5;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.focusrow .fr-l{font-weight:800;color:var(--amber);text-transform:uppercase;font-size:.68rem;letter-spacing:.06em;white-space:nowrap}
+.focusrow b{color:var(--ink)}
+
 footer{max-width:1080px;margin:0 auto;padding:0 max(18px,4vw) 50px;color:var(--faint);font-size:.78rem;text-align:center;line-height:1.7}
 footer .row{padding-top:22px;border-top:1px solid var(--line)}
 footer b{color:var(--soft)}
@@ -194,7 +204,7 @@ footer b{color:var(--soft)}
   .rankbadge{flex:1}
 }
 @media print{
-  header,.backlink,.dropzone,footer .priv{display:none}
+  header,.tabbar,.backlink,.dropzone,footer .priv{display:none}
   body{background:#fff}.kpi,.move,.hero{box-shadow:none}
   main{padding-top:10px}
 }
@@ -208,11 +218,18 @@ footer b{color:var(--soft)}
     <span class="chip" id="fiscalChip"><span class="dot"></span><span id="fiscalText">Fiscal month</span></span>
     <span class="chip" id="dayChip"><span id="dayText">Day —</span></span>
     <button class="btn btn-ghost" id="reloadBtn" title="Re-check for today's report">↻ Refresh</button>
+    <button class="btn btn-ghost" id="copyBtn" style="display:none">✉ Copy email blurb</button>
     <button class="btn btn-pri" id="printBtn" style="display:none">⎙ Print / Save PDF</button>
   </div>
 </header>
 
 <main>
+  <nav class="tabbar" id="tabbar">
+    <button class="tab active" data-scope="store">Store</button>
+    <button class="tab" data-scope="district">District</button>
+    <button class="tab" data-scope="region">Region</button>
+  </nav>
+
   <!-- PICKER -->
   <section id="picker">
     <div class="intro">
@@ -232,6 +249,26 @@ footer b{color:var(--soft)}
         <input id="fileInput" type="file" accept=".xlsx,.xls,.csv">
       </div>
     </div>
+  </section>
+
+  <!-- DISTRICT PICKER -->
+  <section id="pickerD" style="display:none">
+    <div class="intro">
+      <div class="kicker">District coaching</div>
+      <h1 class="serif">Every district, <em>ranked</em>.</h1>
+      <p>Pick a district. We&#8217;ll show which metrics move it up — and exactly which stores to coach to get there.</p>
+    </div>
+    <div class="pickwrap"><div class="results show-all" id="resultsD"></div></div>
+  </section>
+
+  <!-- REGION PICKER -->
+  <section id="pickerR" style="display:none">
+    <div class="intro">
+      <div class="kicker">Region coaching</div>
+      <h1 class="serif">Every region, <em>ranked</em>.</h1>
+      <p>Pick a region. Same playbook, biggest picture — with the stores dragging each metric called out.</p>
+    </div>
+    <div class="pickwrap"><div class="results show-all" id="resultsR"></div></div>
   </section>
 
   <!-- SCORECARD -->
@@ -267,7 +304,7 @@ var KPIS = [
   {k:'mcr', w:25, name:'Mobile Close Rate', type:'pct', kind:'rate', unit:'mobile sale', base:'walk-ins',
    eli5:"Of everyone who walks in, how many leave with a new phone line. This is the single biggest score on the board."},
   {k:'gp',  w:20, name:'Profit (GP $ Trend)', type:'usd', kind:'gp',
-   eli5:"How much money your store is on pace to make this month after costs."},
+   eli5:"How much money you\u2019re on pace to make this month after costs."},
   {k:'nps', w:15, name:'Customer Happiness (NPS)', type:'pct', kind:'nps',
    eli5:"How much customers love the visit. Happy customers come back and bring friends."},
   {k:'ntcr',w:10, name:'Non-Traditional Close Rate', type:'pct', kind:'rate', unit:'non-traditional sale', base:'walk-ins',
@@ -285,6 +322,16 @@ var KMAP={}; KPIS.forEach(function(x){KMAP[x.k]=x;});
 
 /* ============ STATE ============ */
 var STORES=[], N=0, RANKVAL={}, SOURCE_DATE=BUILTIN_DATE, SELECTED=null;
+var DISTRICTS=[], REGIONS=[], LAST_TOP=null;
+var SCOPE='store'; // 'store' | 'district' | 'region'
+var SCOPES={
+  store:{noun:'store',plural:'stores'},
+  district:{noun:'district',plural:'districts'},
+  region:{noun:'region',plural:'regions'}
+};
+var RANKVALS={store:{},district:{},region:{}};
+function ctxList(){return SCOPE==='district'?DISTRICTS:SCOPE==='region'?REGIONS:STORES;}
+function ctxN(){return ctxList().length||1;}
 
 /* ============ FISCAL CALENDAR (22nd -> 21st) ============ */
 function fiscal(){
@@ -309,34 +356,41 @@ function fmt(type,v){
 }
 function plural(n,w){return Math.round(n)+' '+w+(Math.round(n)===1?'':'s');}
 
-/* ============ BANDS (rank out of N; N=best) ============ */
+/* ============ BANDS (rank out of n; n=best) ============ */
 function band(rank){
-  var p=rank/N; // 1.0 = best
+  var p=rank/ctxN(); // 1.0 = best
   if(p>0.75) return 'green';
   if(p>0.50) return 'amber';
   return 'red';
 }
-function bandTag(b){return b==='green'?'STRENGTH · TOP 25%':b==='amber'?'OK · TOP HALF':'FOCUS · BOTTOM 50%';}
-function pos(rank){return N-rank+1;} // 1 = best store
+function bandTag(b){return b==='green'?'STRENGTH \u00b7 TOP 25%':b==='amber'?'OK \u00b7 TOP HALF':'FOCUS \u00b7 BOTTOM 50%';}
+function pos(rank){return ctxN()-rank+1;} // 1 = best
 
-/* build, per KPI, a list of {r,v} sorted by rank so we can map a target rank -> realistic value */
-function buildRankVal(){
-  RANKVAL={};
+/* build, per KPI and per level, a list of {r,v} sorted by rank so we can map a target rank -> realistic value */
+function buildRankValFor(list){
+  var rv={};
   KPIS.forEach(function(kp){
-    var arr=STORES.map(function(s){return {r:s[kp.k+'r'], v:s[kp.k+'v']};})
-                  .filter(function(x){return x.r>0;}).sort(function(a,b){return a.r-b.r;});
-    RANKVAL[kp.k]=arr;
+    var arr=list.map(function(s){return {r:s[kp.k+'r'], v:s[kp.k+'v']};})
+                .filter(function(x){return x.r>0;}).sort(function(a,b){return a.r-b.r;});
+    rv[kp.k]=arr;
   });
+  return rv;
+}
+function buildRankVal(){
+  RANKVALS.store=buildRankValFor(STORES);
+  RANKVALS.district=buildRankValFor(DISTRICTS);
+  RANKVALS.region=buildRankValFor(REGIONS);
+  RANKVAL=RANKVALS.store;
 }
 function valueAtRank(k,targetRank){
-  var arr=RANKVAL[k]; if(!arr.length) return null;
+  var arr=RANKVALS[SCOPE][k]; if(!arr||!arr.length) return null;
   var best=arr[0], bd=1e9;
   for(var i=0;i<arr.length;i++){var d=Math.abs(arr[i].r-targetRank); if(d<bd){bd=d;best=arr[i];}}
   return best.v;
 }
-// what rank does a given value earn? (rank 1 = lowest value; rank = # of stores at or below)
+// what rank does a given value earn? (rank 1 = lowest value; rank = # at or below)
 function rankAtValue(k,val){
-  var arr=RANKVAL[k], r=0;
+  var arr=RANKVALS[SCOPE][k]||[], r=0;
   for(var i=0;i<arr.length;i++){ if(arr[i].v<=val+1e-9) r=Math.max(r,arr[i].r); }
   return r||1;
 }
@@ -356,11 +410,11 @@ function realModel(kp,s){
 }
 // How ambitious a rank climb to aim for, dialed down as the fiscal month runs out.
 function targetRank(R,fi){
-  var room=N-R, pace=Math.max(0.15,(fi.left||0)/(fi.total||1)), p=R/N;
+  var n=ctxN(), room=n-R, pace=Math.max(0.15,(fi.left||0)/(fi.total||1)), p=R/n;
   var reach = p>0.75?0.12 : p>0.50?0.28 : 0.42;
   var tr=R+Math.round(room*reach*pace);
-  tr=Math.max(tr, Math.min(N, R+((fi.left||0)>=3?2:1)));
-  return Math.min(tr,N);
+  tr=Math.max(tr, Math.min(n, R+((fi.left||0)>=3?2:1)));
+  return Math.min(tr,n);
 }
 // Achievability from required daily lift vs current daily pace.
 function grade(extra,perDayNeeded,curPace){
@@ -372,7 +426,7 @@ function grade(extra,perDayNeeded,curPace){
 }
 function gradeColor(g){return g==='easy'?'#1a7f4b':g==='push'?'#b7791f':'#c0492b';}
 // How many stores overall you'd overtake by adding `pts` to your score.
-function overtakeCount(s,pts){var c=0;for(var i=0;i<STORES.length;i++){var x=STORES[i];if(x.score>s.score&&x.score<=s.score+pts)c++;}return c;}
+function overtakeCount(s,pts){var L=ctxList(),c=0;for(var i=0;i<L.length;i++){var x=L[i];if(x.score>s.score&&x.score<=s.score+pts)c++;}return c;}
 
 /* ===== Store's OWN daily goals — mirrors the Daily-Goals-Sheet math (fiscal basis) ===== */
 var TH={mcr:7, fcr:10, acc:30, gpFloor:40000, gpBoost:10000};
@@ -397,15 +451,28 @@ function dailyGoals(s,fi){
 // Build one pace-aware move. Returns null if there's no honest room.
 function buildMove(kp,s,fi){
   var R=s[kp.k+'r'], cur=s[kp.k+'v'];
+  if(!(R>0)){
+    // District/region with a blank metric (e.g. no NPS on the board) = forfeited points. Call it out.
+    if(kp.k==='nps'&&SCOPE!=='store'){
+      var estR=Math.max(1,Math.round(ctxN()/2)), estPts=estR*kp.w;
+      var nfo=buildFocus(kp,s,fi,null,{});
+      return {kp:kp,R:0,realRank:estR,cur:0,goal:null,pts:estPts,overall:0,det:{},grade:{g:'push',label:'free points'},b:'red',
+        brief:'no NPS on the board at all — get surveys flowing; even a mid-pack score is worth ~'+commas(estPts)+' pts',
+        play:'Your '+SCOPE+' shows <b>no NPS score at all</b> — zero points from a 15-weight metric, so every ranked '+SCOPE+' beats you here by default. Get every store asking <b>every</b> happy customer to finish the survey today; even a mid-pack score is worth roughly <b>+'+commas(estPts)+' points</b>.',
+        focus:nfo?nfo.html:null,focusText:nfo?nfo.text:null};
+    }
+    return null;
+  }
   var tr=targetRank(R,fi);
   var goalScored=valueAtRank(kp.k,tr);
   if(goalScored==null||!(goalScored>cur)) return null;
-  var realRank=Math.min(rankAtValue(kp.k,goalScored),N);
+  var realRank=Math.min(rankAtValue(kp.k,goalScored),ctxN());
   if(realRank<=R) return null;
   var pts=(realRank-R)*kp.w;
   var overall=overtakeCount(s,pts);
   var dleft=Math.max(0,fi.left||0), dEl=Math.max(1,fi.dayN||1);
-  var det={},gd,play;
+  if(dleft===0 && kp.kind!=='nps' && kp.kind!=='gp') return null; // last day: pace moves are gone — reset on the 22nd
+  var det={},gd,play,brief='';
 
   var rm=realModel(kp,s);
   if(rm && rm.base>0){
@@ -420,61 +487,148 @@ function buildMove(kp,s,fi){
     det={curReal:curReal,goalReal:goalReal,extra:extra,perDayNeeded:perDayNeeded,curPace:curPace,futureBase:futureBase};
     var eu=Math.round(extra), unit=kp.unit;
     if(kp.kind==='rate'){
-      // Stack the store's OWN daily goal (from the Daily-Goals-Sheet) with the extra needed to climb.
-      var dg=dailyGoals(s,fi);
-      var baseG=(kp.k==='mcr')?dg.mob:dg.nonTrad;
-      var rankDaily=Math.max(0,Math.ceil(perDayNeeded));
-      var combined=Math.max(baseG,rankDaily);
-      var extraG=combined-baseG;
-      det.stack={base:baseG,extra:extraG,combined:combined,unit:(kp.k==='mcr'?'mobile':'non-traditional')};
-      play="Your standing daily goal is <b>"+baseG+" "+(kp.k==='mcr'?'mobile':'non-traditional')+(baseG===1?'':'s')+"/day</b>. "+
-        (extraG>0
-          ? "To also climb the ranker, add <b>+"+extraG+"/day</b> on top — aim for <b>"+combined+"/day</b> to reach <b>"+fmt('pct',goalReal)+"</b> by the 21st. "
-          : "Hit that and you climb — you’re already pacing enough to reach <b>"+fmt('pct',goalReal)+"</b>. ")+
-        (kp.k==='mcr'?"Greet fast, put a number in front of every ‘just looking’, and don’t let a guest leave without a quote."
-                     :"Attach home internet, a watch or a tablet to every phone deal.");
+      if(SCOPE==='store'){
+        // Stack the store's OWN daily goal (from the Daily-Goals-Sheet) with the extra needed to climb.
+        var dg=dailyGoals(s,fi);
+        var baseG=(kp.k==='mcr')?dg.mob:dg.nonTrad;
+        var rankDaily=Math.max(0,Math.ceil(perDayNeeded));
+        var combined=Math.max(baseG,rankDaily);
+        var extraG=combined-baseG;
+        det.stack={base:baseG,extra:extraG,combined:combined,unit:(kp.k==='mcr'?'mobile':'non-traditional')};
+        play="Your standing daily goal is <b>"+baseG+" "+(kp.k==='mcr'?'mobile':'non-traditional')+(baseG===1?'':'s')+"/day</b>. "+
+          (extraG>0
+            ? "To also climb the ranker, add <b>+"+extraG+"/day</b> on top — aim for <b>"+combined+"/day</b> to reach <b>"+fmt('pct',goalReal)+"</b> by the 21st. "
+            : "Hit that and you climb — you’re already pacing enough to reach <b>"+fmt('pct',goalReal)+"</b>. ")+
+          (kp.k==='mcr'?"Greet fast, put a number in front of every ‘just looking’, and don’t let a guest leave without a quote."
+                       :"Attach home internet, a watch or a tablet to every phone deal.");
+        brief='aim for '+combined+'/day ('+baseG+' daily goal + '+extraG+' to climb)';
+      } else {
+        var needDaily=Math.max(1,Math.ceil(perDayNeeded)), paceNow=Math.round(curPace);
+        det.rankDaily=needDaily;
+        play="Your "+SCOPE+" is pacing <b>~"+paceNow+" "+unit+(paceNow===1?'':'s')+"/day</b>. Lift that to <b>~"+needDaily+"/day</b> ("+(needDaily>paceNow?('+'+(needDaily-paceNow)+'/day more'):'hold the pace')+") to reach <b>"+fmt('pct',goalReal)+"</b> by the 21st. Push it through the focus stores below — that's where the gap lives.";
+        brief='lift the pace from ~'+paceNow+' to ~'+needDaily+' '+unit+(needDaily===1?'':'s')+'/day '+SCOPE+'-wide (+'+Math.max(0,needDaily-paceNow)+'/day)';
+      }
     } else {
       var share=futureBase>0?Math.min(1,extra/futureBase):0;
-      play="You’ve got about <b>"+Math.round(futureBase)+" more "+kp.base+"</b> coming this month. Make <b>~"+eu+" of them "+unit+"s</b> ("+Math.round(share*100)+"% of them) to lift your mix from <b>"+fmt('pct',curReal)+"</b> to <b>"+fmt('pct',goalReal)+"</b>. "+
+      var capped=extra>futureBase;
+      if(capped){ eu=Math.max(1,Math.floor(futureBase)); gd={g:'stretch',label:'a big stretch'}; }
+      play="You’ve got about <b>"+Math.round(futureBase)+" more "+kp.base+"</b> coming this month. "+
+        (capped
+          ? "Even making <b>every one of them a "+unit+"</b> won’t fully close this gap before the 21st — start now, bank what you can, and carry the habit into the new month. "
+          : "Make <b>~"+eu+" of them "+unit+"s</b> ("+Math.round(share*100)+"% of them) to lift your mix from <b>"+fmt('pct',curReal)+"</b> to <b>"+fmt('pct',goalReal)+"</b>. ")+
         (kp.k==='mp'?"Lead with Mobile Plus — present premium first and tie it to perks they’ll actually use."
         :kp.k==='upg'?"Work a ‘who’s due’ list and call upgrade-eligible customers before they shop around."
         :"Make the 1-Gig plan your default pitch, not the upsell.");
+      brief=capped?('make every one of the next ~'+Math.round(futureBase)+' '+kp.base+' a '+unit+' — gap won\u2019t fully close this month, start now')
+                  :('make ~'+eu+' of the next ~'+Math.round(futureBase)+' '+kp.base+' '+unit+'s');
     }
   } else if(kp.kind==='acc'){
     var perDev=Math.max(0,goalScored-cur), devLeft=(s.dev||0)/dEl*dleft, addRev=perDev*((s.dev||0)+devLeft);
+    var perDevRem=devLeft>0 ? perDev*((s.dev||0)+devLeft)/devLeft : perDev; // month-end avg must rise perDev, so remaining devices carry the whole lift
     gd=grade(perDev>0?1:0, perDev, Math.max(1,cur*0.15));
-    det={perDev:perDev};
-    play="Add about <b>$"+perDev.toFixed(2)+" more per device</b> — usually one case plus a screen protector. Over the roughly <b>"+Math.round(devLeft)+" devices</b> left this month that’s about <b>$"+commas(addRev)+" more</b>, and it lifts you from <b>$"+cur.toFixed(2)+"</b> to <b>$"+goalScored.toFixed(2)+"</b> per device.";
+    det={perDev:perDev,perDevRem:perDevRem};
+    play="Add about <b>$"+perDevRem.toFixed(2)+" more per device</b> on the roughly <b>"+Math.round(devLeft)+" devices</b> left this month — usually a case plus a screen protector. That’s about <b>$"+commas(addRev)+" more</b> total, and it lifts your month-end average from <b>$"+cur.toFixed(2)+"</b> to <b>$"+goalScored.toFixed(2)+"</b> per device.";
+    brief='add $'+perDevRem.toFixed(2)+'/device on the ~'+Math.round(devLeft)+' devices left (~$'+commas(addRev)+' total)';
   } else if(kp.kind==='gp'){
     var extraMonthly=Math.max(0,goalScored-cur), perDay=dleft>0?extraMonthly/dleft:extraMonthly, gpPace=s.gpday||0;
     gd=grade(extraMonthly>0?1:0, perDay, Math.max(1,gpPace));
     det={perDay:perDay,gpPace:gpPace};
     play="You’re pacing <b>$"+commas(gpPace)+"/day</b> in profit. Add about <b>$"+commas(perDay)+"/day</b> more — full-price accessories, premium plans, protect margin and kill fallout — to reach <b>$"+commas(goalScored)+"</b> and climb the profit board.";
+    brief='add ~$'+commas(perDay)+'/day profit (pacing $'+commas(gpPace)+'/day now)';
   } else { // nps — lagged / smoothed, coach honestly
     gd={g:'push',label:'slowest lever'};
     det={};
     play="You’re at <b>"+fmt('pct',cur)+"</b>. NPS moves slowly and is smoothed over recent weeks, so start today: ask <b>every</b> happy customer to finish the survey before they leave, and fix one friction point (wait time, a follow-up text). A few more promoters nudges you up the board.";
+    brief='survey every happy customer — slowest lever, start now';
   }
-  return {kp:kp,R:R,realRank:realRank,cur:cur,goal:goalScored,pts:pts,overall:overall,det:det,grade:gd,play:play,b:band(R)};
+  var focus=(SCOPE!=='store')?buildFocus(kp,s,fi,goalScored,det):null;
+  return {kp:kp,R:R,realRank:realRank,cur:cur,goal:goalScored,pts:pts,overall:overall,det:det,grade:gd,play:play,brief:brief,
+    focus:focus?focus.html:null,focusText:focus?focus.text:null,b:band(R)};
+}
+
+/* ===== ROLL-DOWN: which member stores are dragging this metric, with a quantified ask each ===== */
+function buildFocus(kp,s,fi,goalScored,det){
+  var mem=s.members||[]; if(!mem.length) return null;
+  var dleft=Math.max(1,fi.left||1), dEl=Math.max(1,fi.dayN||1);
+  var kcnt=(SCOPE==='region')?3:2;
+  var picks=[];
+  if(kp.kind==='rate'){
+    var goalReal=(det&&det.goalReal!=null)?det.goalReal:goalScored;
+    picks=mem.map(function(x){
+      var nm=(kp.k==='mcr')?(x.minst||0):Math.max(0,(x.inst||0)-(x.minst||0));
+      var v=(x.trf>0)?nm/x.trf:0, gap=goalReal-v;
+      return {x:x,v:v,gap:gap,drag:gap*(x.trf||0),rem:(x.trfday||((x.trf||0)/dEl))*dleft};
+    }).filter(function(d){return d.gap>0;}).sort(function(a,b){return b.drag-a.drag;}).slice(0,kcnt)
+      .map(function(d){return {name:d.x.st,val:fmt('pct',d.v),ask:'+'+Math.max(1,Math.ceil(d.gap*((d.x.trf||0)+d.rem)/dleft))+'/day'};});
+  } else if(kp.kind==='mix'){
+    var goalM=(det&&det.goalReal!=null)?det.goalReal:goalScored;
+    picks=mem.map(function(x){
+      var p;
+      if(kp.k==='mp') p={n:x.mpc||0,b:x.mob||0};
+      else if(kp.k==='upg') p={n:x.upgmtd||0,b:x.newmob||0};
+      else {var hb=(x.gigv>0)?(x.gigc||0)/x.gigv:(x.gigc||0); p={n:x.gigc||0,b:hb};}
+      var v=(p.b>0)?p.n/p.b:0, gap=goalM-v;
+      return {x:x,v:v,gap:gap,b:p.b,drag:gap*p.b};
+    }).filter(function(d){return d.b>0&&d.gap>0;}).sort(function(a,b){return b.drag-a.drag;}).slice(0,kcnt)
+      .map(function(d){
+        var remB=(d.b/dEl)*dleft, extraU=Math.max(1,Math.round(d.gap*(d.b+remB)));
+        return {name:d.x.st,val:fmt('pct',d.v),ask:'+'+extraU+' this month'};
+      });
+  } else if(kp.kind==='acc'){
+    picks=mem.map(function(x){
+      var v=(x.dev>0)?(x.accnet||0)/x.dev:(x.accdev||0), gap=goalScored-v;
+      return {x:x,v:v,gap:gap,drag:gap*(x.dev||0)};
+    }).filter(function(d){return d.gap>0;}).sort(function(a,b){return b.drag-a.drag;}).slice(0,kcnt)
+      .map(function(d){
+        var remDev=((d.x.dev||0)/dEl)*dleft;
+        var askDev=remDev>0 ? d.gap*((d.x.dev||0)+remDev)/remDev : d.gap;
+        return {name:d.x.st,val:'$'+d.v.toFixed(2),ask:'+$'+Math.max(1,Math.round(askDev))+'/device'};
+      });
+  } else if(kp.kind==='gp'){
+    var behind=mem.filter(function(x){return (x.vargp||0)<0;}).sort(function(a,b){return (a.vargp||0)-(b.vargp||0);}).slice(0,kcnt);
+    if(behind.length){
+      picks=behind.map(function(x){return {name:x.st,val:'$'+commas(x.gpday||0)+'/day',ask:'$'+commas(-x.vargp)+' behind trend'};});
+    } else {
+      var perStore=Math.max(1,Math.ceil(((det&&det.perDay)||0)/kcnt));
+      picks=mem.slice().sort(function(a,b){return (a.gpday||0)-(b.gpday||0);}).slice(0,kcnt)
+        .map(function(x){return {name:x.st,val:'$'+commas(x.gpday||0)+'/day',ask:'+$'+commas(perStore)+'/day'};});
+    }
+  } else { // nps: lowest scores first
+    picks=mem.filter(function(x){return (x.npsv||0)>0;}).sort(function(a,b){return (a.npsv||0)-(b.npsv||0);}).slice(0,kcnt)
+      .map(function(x){return {name:x.st,val:fmt('pct',x.npsv),ask:'survey blitz'};});
+  }
+  if(!picks.length) return null;
+  var html=picks.map(function(p){return '<b>'+esc(p.name)+'</b> ('+p.val+' · '+p.ask+')';}).join(' &nbsp;·&nbsp; ');
+  var text=picks.map(function(p){return p.name+' ('+p.val+', '+p.ask+')';}).join(' and ');
+  return {html:html,text:text};
 }
 
 /* ============ RENDER HERO ============ */
 function tierMsg(rk){
-  if(rk<=15) return ["You're a top store. 🏆","This is about <b>staying sharp</b> and defending your spot. Small slips cost the most up here."];
-  if(rk<=49) return ["Strong store, knocking on the door.","A couple of focused moves and you're in the <b>top tier</b>. Here's where the points are."];
-  if(rk<=97) return ["Solid base, clear room to climb.","These <b>3 moves</b> are your fastest path up the ranker this month."];
+  var n=ctxN(), noun=SCOPES[SCOPE].noun, p=rk/n;
+  if(rk===1||p<=0.10) return ["You're a top "+noun+". 🏆","This is about <b>staying sharp</b> and defending your spot. Small slips cost the most up here."];
+  if(p<=0.33) return ["Strong "+noun+", knocking on the door.","A couple of focused moves and you're in the <b>top tier</b>. Here's where the points are."];
+  if(p<=0.66) return ["Solid base, clear room to climb.","These <b>3 moves</b> are your fastest path up the ranker this month."];
   return ["Big opportunity here. 🚀","The upside: that means the <b>fastest climb</b> on the board. Start with these 3."];
 }
 function renderHero(s){
-  var tm=tierMsg(s.rk);
+  var tm=tierMsg(s.rk), n=ctxN();
+  var eyebrow,title,sub;
+  if(SCOPE==='district'){
+    eyebrow=esc(s.rg||'District'); title=esc(s.name)+'&#8217;s District'; sub=s.storeCount+' stores';
+  } else if(SCOPE==='region'){
+    eyebrow='Region'; title=esc(s.name); sub=s.storeCount+' stores · '+(s.dmCount||0)+' DM'+(s.dmCount===1?'':'s');
+  } else {
+    eyebrow=esc(s.rg)+(s.dm?' · '+esc(s.dm)+'&#8217;s District':''); title=esc(s.st); sub='Store Manager: '+esc(s.sm||'—');
+  }
   var hero=document.getElementById('hero');
   hero.innerHTML=
     '<div class="hero-top"><div>'+
-      '<div class="eyebrow">'+esc(s.rg)+(s.dm?' · '+esc(s.dm)+"'s District":'')+'</div>'+
-      '<h2 class="serif">'+esc(s.st)+'</h2>'+
-      '<div class="sub">Store Manager: '+esc(s.sm||'—')+'</div>'+
+      '<div class="eyebrow">'+eyebrow+'</div>'+
+      '<h2 class="serif">'+title+'</h2>'+
+      '<div class="sub">'+sub+'</div>'+
     '</div>'+
-    '<div class="rankbadge"><div class="lab">Overall</div><div class="big tnum" id="heroRank">#'+s.rk+'</div><div class="of">of '+N+' stores</div></div>'+
+    '<div class="rankbadge"><div class="lab">Overall</div><div class="big tnum" id="heroRank">#'+s.rk+'</div><div class="of">of '+n+' '+SCOPES[SCOPE].plural+'</div></div>'+
     '</div>'+
     '<div class="tier"><b>'+tm[0]+'</b> '+tm[1]+'</div>';
 }
@@ -482,14 +636,17 @@ function renderHero(s){
 /* ============ RENDER REPORT CARD ============ */
 function renderGrid(s){
   var g=document.getElementById('kpiGrid'); g.innerHTML='';
+  var n=ctxN();
   KPIS.forEach(function(kp,i){
-    var R=s[kp.k+'r'], b=band(R), p=pos(R), pct=Math.round((R/N)*100);
+    var R=s[kp.k+'r'], nodata=!(R>0);
+    var rc=((RANKVALS[SCOPE]||{})[kp.k]||[]).length||n;
+    var b=nodata?'red':band(R), p=nodata?0:(rc-R+1), pct=nodata?0:Math.round((R/rc)*100);
     var el=document.createElement('div');
     el.className='kpi '+b; el.style.animationDelay=(i*0.045)+'s';
     el.innerHTML=
       '<div class="kpi-top"><span class="kpi-name">'+kp.name+'</span><span class="wt">'+kp.w+' PTS</span></div>'+
-      '<div class="kpi-val tnum">'+fmt(kp.type,s[kp.k+'v'])+'</div>'+
-      '<div class="kpi-pos"><span class="tag '+b+'">'+bandTag(b)+'</span><span class="pp tnum">#'+p+' of '+N+'</span></div>'+
+      '<div class="kpi-val tnum">'+(nodata?'—':fmt(kp.type,s[kp.k+'v']))+'</div>'+
+      '<div class="kpi-pos"><span class="tag '+b+'">'+(nodata?'NO DATA · 0 PTS':bandTag(b))+'</span><span class="pp tnum">'+(nodata?'':'#'+p+' of '+rc)+'</span></div>'+
       '<div class="bar"><i class="'+b+'" style="width:0%" data-w="'+pct+'"></i></div>'+
       '<div class="eli5">'+kp.eli5+'</div>';
     g.appendChild(el);
@@ -500,26 +657,30 @@ function renderGrid(s){
   },120);});
 }
 
-/* intro above the 3 moves: the store directly above you + your standing daily goals */
+/* intro above the 3 moves: whoever is directly above you + (stores only) standing daily goals */
 function renderMovesIntro(box,s,top,fi){
-  var above=STORES.filter(function(x){return x.rk===s.rk-1;})[0];
+  var noun=SCOPES[SCOPE].noun;
+  var above=ctxList().filter(function(x){return x.rk<s.rk;}).sort(function(a,b){return b.rk-a.rk;})[0];
   var sumPts=top.reduce(function(a,o){return a+o.pts;},0);
   var intro=document.createElement('div'); intro.className='moves-intro';
   var html;
+  function dn(x){return x.st||((x.name||'')+(SCOPE==='district'?'&#8217;s District':''));}
   if(above){
     var gap=Math.max(0, above.score-s.score);
-    html='Next store to pass: <b>#'+above.rk+' '+esc(above.st)+'</b> — you’re <b>'+commas(gap)+' points</b> behind. '+
+    html='Next '+noun+' to pass: <b>#'+above.rk+' '+esc(dn(above)).replace(/&amp;#8217;/g,'&#8217;')+'</b> — you&#8217;re <b>'+commas(gap)+' points</b> behind. '+
       'These three moves are worth up to <b>+'+commas(sumPts)+' points</b> with <b>'+fi.left+' day'+(fi.left===1?'':'s')+'</b> left in the fiscal month'+((gap>0&&sumPts>=gap)?' — enough to move past them':'')+'. Each move is graded by how doable it is in the time you have.';
   } else {
-    html='You’re <b>#1</b> — this is about defending the top. These moves are worth up to <b>+'+commas(sumPts)+' points</b> with <b>'+fi.left+' day'+(fi.left===1?'':'s')+'</b> left.';
+    html=(s.rk===1?'You&#8217;re <b>#1</b> — this is about defending the top. ':'You&#8217;re tied at the top of your bracket. ')+'These moves are worth up to <b>+'+commas(sumPts)+' points</b> with <b>'+fi.left+' day'+(fi.left===1?'':'s')+'</b> left.';
   }
-  var g=dailyGoals(s,fi);
-  html+='<div class="dgrow"><span class="dg-lab">Your daily goals</span>'+
-    '<span class="dg-chip">📱 '+g.mob+' mobile</span>'+
-    '<span class="dg-chip">➕ '+g.nonTrad+' non-trad</span>'+
-    '<span class="dg-chip">🎁 $'+commas(g.acc)+' acc</span>'+
-    '<span class="dg-chip">💰 $'+commas(g.gp)+' GP</span>'+
-    '<span class="dg-note">per day · matches your Daily-Goals sheet</span></div>';
+  if(SCOPE==='store'){
+    var g=dailyGoals(s,fi);
+    html+='<div class="dgrow"><span class="dg-lab">Your daily goals</span>'+
+      '<span class="dg-chip">📱 '+g.mob+' mobile</span>'+
+      '<span class="dg-chip">➕ '+g.nonTrad+' non-trad</span>'+
+      '<span class="dg-chip">🎁 $'+commas(g.acc)+' acc</span>'+
+      '<span class="dg-chip">💰 $'+commas(g.gp)+' GP</span>'+
+      '<span class="dg-note">per day · matches your Daily-Goals sheet</span></div>';
+  }
   intro.innerHTML=html;
   box.appendChild(intro);
   if(!top.length){
@@ -538,12 +699,13 @@ function renderMoves(s){
   opps.forEach(function(o){
     var a=aw[o.grade.g]!=null?aw[o.grade.g]:0.5;
     var mix=(o.kp.kind==='mix')?1.15:1.0;
-    var lag=(o.kp.kind==='nps')?0.45:1.0;
+    var lag=(o.kp.kind==='nps'&&o.R>0)?0.45:1.0;
     o.rankScore=o.pts*a*mix*lag;
   });
   opps.sort(function(a,b){return b.rankScore-a.rankScore;});
 
   var top=opps.slice(0,3);
+  LAST_TOP=top;
   var box=document.getElementById('moves'); box.innerHTML='';
   renderMovesIntro(box,s,top,fi);
   top.forEach(function(o,i){
@@ -554,12 +716,12 @@ function renderMoves(s){
       '<div class="num">'+(i+1)+'</div>'+
       '<div class="move-body">'+
         '<div class="move-h"><span class="ttl">'+kp.name+'</span>'+
-          '<span class="impact">+'+commas(o.pts)+' pts'+(o.overall>0?' · pass ~'+o.overall+' store'+(o.overall===1?'':'s'):'')+'</span></div>'+
+          '<span class="impact">+'+commas(o.pts)+' pts'+(o.overall>0?' · pass ~'+o.overall+' '+SCOPES[SCOPE].noun+(o.overall===1?'':'s'):'')+'</span></div>'+
         '<div class="why">'+kp.eli5+'</div>'+
         '<div class="fromto">'+
-          '<div class="ft now"><div class="l">Right now</div><div class="v tnum">'+fmt(kp.type,o.cur)+'</div></div>'+
+          '<div class="ft now"><div class="l">Right now</div><div class="v tnum">'+(o.R>0?fmt(kp.type,o.cur):'—')+'</div></div>'+
           '<div class="ftarrow">→</div>'+
-          '<div class="ft goal"><div class="l">Month-end goal</div><div class="v tnum">'+fmt(kp.type,o.goal)+'</div></div>'+
+          '<div class="ft goal"><div class="l">Month-end goal</div><div class="v tnum">'+(o.goal!=null?fmt(kp.type,o.goal):'—')+'</div></div>'+
           '<div class="ft dotable"><span class="doable-chip" style="background:'+gc+'">'+o.grade.label+'</span></div>'+
         '</div>'+
         (o.det.stack?('<div class="goalstack"><span class="gs-item"><span class="gs-l">Daily goal</span><span class="gs-v tnum">'+o.det.stack.base+'</span></span>'+
@@ -567,17 +729,18 @@ function renderMoves(s){
           '<span class="gs-op">=</span><span class="gs-item gs-total"><span class="gs-l">aim for</span><span class="gs-v tnum">'+o.det.stack.combined+'/day</span></span>'+
           '<span class="gs-unit">'+o.det.stack.unit+'</span></div>'):'')+
         '<div class="play"><div class="pl">▸ The Play</div><div class="pt">'+o.play+'</div></div>'+
+        (o.focus?('<div class="focusrow"><span class="fr-l">🎯 Focus stores</span><span>'+o.focus+'</span></div>'):'')+
       '</div>';
     box.appendChild(el);
   });
 
   // keep-up note: strengths (green) not already in top 3
   var inTop={}; top.forEach(function(o){inTop[o.kp.k]=1;});
-  var greens=KPIS.filter(function(kp){return band(s[kp.k+'r'])==='green' && !inTop[kp.k];});
+  var greens=KPIS.filter(function(kp){return (s[kp.k+'r']>0)&&band(s[kp.k+'r'])==='green' && !inTop[kp.k];});
   var ku=document.getElementById('keepup');
   if(greens.length){
     ku.style.display='block';
-    ku.innerHTML='<b>Keep doing what works:</b> you\u2019re already top-25% in '+
+    ku.innerHTML='<b>Keep doing what works:</b> you’re already top-25% in '+
       greens.map(function(kp){return kp.name;}).join(', ')+'. Protect these while you chase the 3 moves above.';
   } else { ku.style.display='none'; }
 }
@@ -587,30 +750,36 @@ function esc(t){return (''+t).replace(/[&<>"]/g,function(c){return {'&':'&amp;',
 /* count-up on hero rank */
 function countUpRank(target){
   var el=document.getElementById('heroRank'); if(!el) return;
-  var start=Math.min(N,target+22), t0=null, dur=600;
+  var start=Math.min(ctxN(),target+22), t0=null, dur=600;
   function step(ts){ if(!t0)t0=ts; var p=Math.min(1,(ts-t0)/dur);
     var v=Math.round(start+(target-start)*(1-Math.pow(1-p,3)));
     el.textContent='#'+v; if(p<1) requestAnimationFrame(step);}
   requestAnimationFrame(step);
 }
 
-/* ============ SELECT STORE ============ */
+/* ============ SELECT (store / district / region) ============ */
 function selectStore(s){
   SELECTED=s;
   document.getElementById('picker').style.display='none';
+  document.getElementById('pickerD').style.display='none';
+  document.getElementById('pickerR').style.display='none';
   var sc=document.getElementById('scorecard'); sc.classList.add('show');
   document.getElementById('printBtn').style.display='inline-flex';
+  document.getElementById('copyBtn').style.display='inline-flex';
+  document.getElementById('backBtn').textContent='← Choose a different '+SCOPES[SCOPE].noun;
   renderHero(s); renderGrid(s); renderMoves(s);
   countUpRank(s.rk);
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function deselect(){
-  SELECTED=null;
+  SELECTED=null; LAST_TOP=null;
   document.getElementById('scorecard').classList.remove('show');
-  document.getElementById('picker').style.display='block';
   document.getElementById('printBtn').style.display='none';
-  document.getElementById('storeSearch').value=''; renderResults('');
-  document.getElementById('storeSearch').focus();
+  document.getElementById('copyBtn').style.display='none';
+  document.getElementById('picker').style.display=(SCOPE==='store')?'block':'none';
+  document.getElementById('pickerD').style.display=(SCOPE==='district')?'block':'none';
+  document.getElementById('pickerR').style.display=(SCOPE==='region')?'block':'none';
+  if(SCOPE==='store'){ document.getElementById('storeSearch').value=''; renderResults(''); document.getElementById('storeSearch').focus(); }
 }
 
 /* ============ SEARCH / RESULTS ============ */
@@ -632,16 +801,21 @@ function renderResults(q){
 }
 
 /* ============ LOAD DATASET ============ */
-function setData(stores,dateLabel,sourceNote,statusClass){
-  STORES=stores; N=STORES.length; buildRankVal(); SOURCE_DATE=dateLabel;
+function setData(stores,dateLabel,sourceNote,statusClass,districts,regions){
+  STORES=stores; N=STORES.length;
+  DISTRICTS=districts||[]; REGIONS=regions||[];
+  aggregateMembers(DISTRICTS,'dm'); aggregateMembers(REGIONS,'rg');
+  buildRankVal(); SOURCE_DATE=dateLabel;
   var fi=fiscal();
   document.getElementById('fiscalText').textContent='Fiscal: '+fi.label;
   document.getElementById('dayText').textContent='Day '+fi.dayN+' of '+fi.total+' · '+fi.left+' left';
-  document.getElementById('srcLabel').textContent='Data: '+dateLabel+' report · '+N+' stores';
+  document.getElementById('srcLabel').textContent='Data: '+dateLabel+' report · '+N+' stores'+(DISTRICTS.length?' · '+DISTRICTS.length+' districts · '+REGIONS.length+' regions':'');
   var st=document.getElementById('status');
   st.className='statusline '+(statusClass||'ok');
   document.getElementById('statusText').innerHTML=sourceNote;
   renderResults('');
+  if(SCOPE==='district') renderEntityList('resultsD',DISTRICTS,'district');
+  if(SCOPE==='region') renderEntityList('resultsR',REGIONS,'region');
 }
 
 /* parse an uploaded/fetched workbook into the store structure */
@@ -677,17 +851,65 @@ function parseWorkbook(buf){
     out.push(o);
   }
   if(!out.length) throw new Error('No store rows found in the report.');
+  return {stores:out, districts:parseLevelSheet(wb,'District Rank'), regions:parseLevelSheet(wb,'Region Rank')};
+}
+
+/* District Rank / Region Rank sheets share one layout: name col 1, value/rank/points blocks 34-57, TTL 58, store count 59 */
+var LKCOL={gp:[34,35,36],mcr:[37,38,39],ntcr:[40,41,42],upg:[43,44,45],acc:[46,47,48],nps:[49,50,51],gig:[52,53,54],mp:[55,56,57]};
+function parseLevelSheet(wb,sheetName){
+  var sheet=wb.Sheets[sheetName]; if(!sheet) return [];
+  var rows=XLSX.utils.sheet_to_json(sheet,{header:1,raw:true,defval:null});
+  var out=[];
+  for(var j=0;j<rows.length;j++){
+    var r=rows[j]; if(!r) continue;
+    var rk=r[0], nm=r[1];
+    if(typeof rk!=='number' || typeof nm!=='string' || !nm.trim()) continue;
+    var o={rk:Math.round(rk),name:nm.trim(),score:num(r[58]),storeCount:Math.round(num(r[59]))};
+    for(var k in LKCOL){var c=LKCOL[k]; o[k+'v']=num(r[c[0]]); o[k+'r']=Math.round(num(r[c[1]])); o[k+'p']=num(r[c[2]]);}
+    out.push(o);
+  }
   return out;
+}
+/* roll district/region raw volumes up from their member stores (formulas verified against the sheet) */
+function aggregateMembers(list,key){
+  list.forEach(function(e){
+    var mem=STORES.filter(function(x){return ((x[key]||'')+'').trim()===e.name;});
+    e.members=mem;
+    function sum(f){return mem.reduce(function(a,x){return a+(x[f]||0);},0);}
+    e.trf=sum('trf'); e.trfday=sum('trfday'); e.inst=sum('inst'); e.minst=sum('minst');
+    e.mob=sum('mob'); e.mpc=sum('mpc'); e.newmob=sum('newmob'); e.upgmtd=sum('upgmtd');
+    e.dev=sum('dev'); e.accnet=sum('accnet'); e.gigc=sum('gigc'); e.gpday=sum('gpday');
+    e.npsdisp=e.npsv;
+    var seen={},regs=[]; mem.forEach(function(x){ if(x.rg && !seen[x.rg]){seen[x.rg]=1; regs.push(x.rg);} });
+    e.rg=regs.join(' / ');
+    var dseen={},dc=0; mem.forEach(function(x){ if(x.dm && !dseen[x.dm]){dseen[x.dm]=1; dc++;} });
+    e.dmCount=dc;
+  });
 }
 
 function handleBuffer(buf,label,note){
   try{
-    var stores=parseWorkbook(buf);
-    setData(stores,label,note||('Loaded <b>'+label+'</b> report · '+stores.length+' stores'),'ok');
-    if(SELECTED){ var again=STORES.filter(function(s){return s.st===SELECTED.st;})[0]; if(again) selectStore(again); }
+    var parsed=parseWorkbook(buf);
+    setData(parsed.stores,label,note||('Loaded <b>'+label+'</b> report · '+parsed.stores.length+' stores'),'ok',parsed.districts,parsed.regions);
+    if(SELECTED){
+      var key=(SCOPE==='store')?'st':'name';
+      var again=ctxList().filter(function(s){return s[key]===SELECTED[key];})[0];
+      if(again) selectStore(again);
+    }
     return true;
   }catch(err){
-    setData(BUILTIN,BUILTIN_DATE,'⚠ Couldn\u2019t read that file ('+esc(err.message)+'). Showing built-in '+BUILTIN_DATE+' data.','warn');
+    if(N>0 && SOURCE_DATE!==BUILTIN_DATE){
+      // keep the good report we already have — just tell the user
+      var st=document.getElementById('status'); st.className='statusline warn';
+      document.getElementById('statusText').innerHTML='⚠ Couldn’t read that file ('+esc(err.message)+'). Keeping the <b>'+SOURCE_DATE+'</b> report.';
+    } else {
+      setData(BUILTIN,BUILTIN_DATE,'⚠ Couldn’t read that file ('+esc(err.message)+'). Showing built-in '+BUILTIN_DATE+' data.','warn');
+      if(SELECTED){
+        var key2=(SCOPE==='store')?'st':'name';
+        var again2=ctxList().filter(function(s){return s[key2]===SELECTED[key2];})[0];
+        if(again2) selectStore(again2); else deselect();
+      }
+    }
     return false;
   }
 }
@@ -709,8 +931,18 @@ function tryAutoPull(){
   var idx=0;
   function next(){
     if(idx>=SOURCES.length){
+      if(N>0 && SOURCE_DATE!==BUILTIN_DATE){
+        var st=document.getElementById('status'); st.className='statusline warn';
+        document.getElementById('statusText').innerHTML='⚠ Couldn\u2019t reach a newer report. Keeping the <b>'+SOURCE_DATE+'</b> report.';
+        return;
+      }
       setData(BUILTIN,BUILTIN_DATE,
         'Showing built-in <b>'+BUILTIN_DATE+'</b> data. Upload today\u2019s report for live numbers.','warn');
+      if(SELECTED){
+        var key3=(SCOPE==='store')?'st':'name';
+        var again3=ctxList().filter(function(s){return s[key3]===SELECTED[key3];})[0];
+        if(again3) selectStore(again3); else deselect();
+      }
       return;
     }
     var url=SOURCES[idx++];
@@ -728,6 +960,72 @@ function tryAutoPull(){
     }).catch(function(){ next(); });
   }
   next();
+}
+
+/* ============ TABS + LEVEL PICKERS ============ */
+function renderEntityList(boxId,list,noun){
+  var box=document.getElementById(boxId); box.innerHTML='';
+  if(!list.length){
+    box.innerHTML='<div class="ritem" style="cursor:default;color:var(--faint)">No '+noun+' data in this report yet — hit ↻ Refresh to pull the latest upload.</div>';
+    return;
+  }
+  list.slice().sort(function(a,b){return a.rk-b.rk;}).forEach(function(s){
+    var it=document.createElement('div'); it.className='ritem';
+    it.innerHTML='<span class="rk">#'+s.rk+'</span><span class="nm">'+esc(s.name)+(noun==='district'?'&#8217;s District':'')+'</span>'+
+                 '<span class="meta">'+s.storeCount+' stores · '+commas(s.score)+' pts</span>';
+    it.onclick=function(){selectStore(s);};
+    box.appendChild(it);
+  });
+}
+function switchTab(scope){
+  SCOPE=scope; SELECTED=null; LAST_TOP=null;
+  document.querySelectorAll('#tabbar .tab').forEach(function(b){b.classList.toggle('active',b.getAttribute('data-scope')===scope);});
+  document.getElementById('scorecard').classList.remove('show');
+  document.getElementById('printBtn').style.display='none';
+  document.getElementById('copyBtn').style.display='none';
+  document.getElementById('picker').style.display=(scope==='store')?'block':'none';
+  document.getElementById('pickerD').style.display=(scope==='district')?'block':'none';
+  document.getElementById('pickerR').style.display=(scope==='region')?'block':'none';
+  if(scope==='district') renderEntityList('resultsD',DISTRICTS,'district');
+  if(scope==='region') renderEntityList('resultsR',REGIONS,'region');
+  if(scope==='store') renderResults(document.getElementById('storeSearch').value||'');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+/* ============ EMAIL BLURB (copy-paste for the daily email) ============ */
+function emailBlurb(s,top,fi){
+  var n=ctxN(), sc=SCOPES[SCOPE];
+  var name=(SCOPE==='store')?s.st:(SCOPE==='district'?s.name+"'s District":s.name+' Region');
+  var out=[];
+  out.push(name+' — #'+s.rk+' of '+n+' '+sc.plural+' · '+commas(s.score)+' pts · '+fi.left+' day'+(fi.left===1?'':'s')+' left in the fiscal month.');
+  var above=ctxList().filter(function(x){return x.rk<s.rk;}).sort(function(a,b){return b.rk-a.rk;})[0];
+  if(above){
+    var nm=above.st||above.name+(SCOPE==='district'?"'s District":'');
+    out.push('Next to pass: #'+above.rk+' '+nm+' ('+commas(Math.max(0,above.score-s.score))+' pts ahead).');
+  }
+  top.forEach(function(o,i){
+    var seg=(i+1)+') '+o.kp.name;
+    if(o.goal!=null&&o.R>0) seg+=' '+fmt(o.kp.type,o.cur)+' → '+fmt(o.kp.type,o.goal);
+    seg+=': '+o.brief+' (+'+commas(o.pts)+' pts'+(o.overall>0?', passes ~'+o.overall+' '+sc.noun+(o.overall===1?'':'s'):'')+' — '+o.grade.label+')';
+    if(o.focusText) seg+='. Focus: '+o.focusText;
+    out.push(seg+'.');
+  });
+  return out.join('\n');
+}
+function copyBlurb(){
+  if(!SELECTED||!LAST_TOP) return;
+  var txt=emailBlurb(SELECTED,LAST_TOP,fiscal());
+  var btn=document.getElementById('copyBtn');
+  function done(ok){ if(btn){ var t='✉ Copy email blurb'; btn.textContent=ok?'✓ Copied!':'Copy failed'; setTimeout(function(){btn.textContent=t;},1600);} }
+  function fallback(){
+    var ta=document.createElement('textarea'); ta.value=txt; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    var ok=false; try{ok=document.execCommand('copy');}catch(e){}
+    document.body.removeChild(ta); done(ok);
+  }
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(function(){done(true);},fallback);
+  } else fallback();
 }
 
 /* ============ WIRING ============ */
@@ -749,6 +1047,11 @@ document.getElementById('fileInput').addEventListener('change',function(e){
   fr.onload=function(ev){ handleBuffer(new Uint8Array(ev.target.result),label,'✓ Loaded <b>'+esc(f.name)+'</b>.'); };
   fr.readAsArrayBuffer(f);
 });
+
+document.querySelectorAll('#tabbar .tab').forEach(function(b){
+  b.addEventListener('click',function(){switchTab(b.getAttribute('data-scope'));});
+});
+document.getElementById('copyBtn').addEventListener('click',copyBlurb);
 
 /* boot: show built-in immediately so the page is useful at once, then try to pull today's */
 setData(BUILTIN,BUILTIN_DATE,'Checking for today\u2019s report…','');
