@@ -595,15 +595,33 @@ function fmt(type,v){
 }
 function plural(n,w){return Math.round(n)+' '+w+(Math.round(n)===1?'':'s');}
 
-/* ============ BANDS (rank out of n; n=best) ============ */
+/* ============ BANDS (rank; 1 = best) ============ */
 function band(rank){
-  var p=rank/ctxN(); // 1.0 = best
+  var p=(ctxN()-rank+1)/ctxN(); // rank 1 = best -> p ~ 1.0
   if(p>0.75) return 'green';
   if(p>0.50) return 'amber';
   return 'red';
 }
 function bandTag(b){return b==='green'?'STRENGTH \u00b7 TOP 25%':b==='amber'?'OK \u00b7 TOP HALF':'FOCUS \u00b7 BOTTOM 50%';}
-function pos(rank){return ctxN()-rank+1;} // 1 = best
+function pos(rank){return rank;} // per-metric ranks are already 1 = best
+
+/* The report's per-metric "Rank" columns hold POINTS (best = N, worst = 1).
+   Convert them to an honest competition rank (1 = best; ties share the same
+   rank) so every "#X of N" on screen reads the way people expect. The overall
+   Rank column (o.rk) is already conventional and is left untouched. */
+var KPI_KEYS=['gp','mcr','ntcr','upg','acc','nps','gig','mp'];
+function pointsToRank(list){
+  KPI_KEYS.forEach(function(k){
+    var pts=[]; list.forEach(function(o){ if(o[k+'r']>0) pts.push(o[k+'r']); });
+    list.forEach(function(o){
+      var v=o[k+'r']; if(!(v>0)) return;
+      var better=0; for(var i=0;i<pts.length;i++){ if(pts[i]>v) better++; }
+      o[k+'r']=better+1;
+    });
+  });
+  return list;
+}
+pointsToRank(BUILTIN); // the built-in snapshot ships points-style too
 
 /* build, per KPI and per level, a list of {r,v} sorted by rank so we can map a target rank -> realistic value */
 function buildRankValFor(list){
@@ -934,7 +952,7 @@ function renderGrid(s){
   KPIS.forEach(function(kp,i){
     var R=s[kp.k+'r'], nodata=!(R>0);
     var rc=((RANKVALS[SCOPE]||{})[kp.k]||[]).length||n;
-    var b=nodata?'red':band(R), p=nodata?0:(rc-R+1), pct=nodata?0:Math.round((R/rc)*100);
+    var b=nodata?'red':band(R), p=nodata?0:R, pct=nodata?0:Math.round(((rc-R+1)/rc)*100);
     var el=document.createElement('div');
     el.className='kpi '+b; el.style.animationDelay=(i*0.045)+'s';
     el.innerHTML=
@@ -1139,7 +1157,7 @@ function parseWorkbook(buf){
     out.push(o);
   }
   if(!out.length) throw new Error('No store rows found in the report.');
-  return {stores:out, districts:parseLevelSheet(wb,'District Rank'), regions:parseLevelSheet(wb,'Region Rank')};
+  return {stores:pointsToRank(out), districts:parseLevelSheet(wb,'District Rank'), regions:parseLevelSheet(wb,'Region Rank')};
 }
 
 /* District Rank / Region Rank sheets share one layout: name col 1, value/rank/points blocks 34-57, TTL 58, store count 59 */
@@ -1156,7 +1174,7 @@ function parseLevelSheet(wb,sheetName){
     for(var k in LKCOL){var c=LKCOL[k]; o[k+'v']=num(r[c[0]]); o[k+'r']=Math.round(num(r[c[1]])); o[k+'p']=num(r[c[2]]);}
     out.push(o);
   }
-  return out;
+  return pointsToRank(out);
 }
 /* roll district/region raw volumes up from their member stores (formulas verified against the sheet) */
 function aggregateMembers(list,key){
